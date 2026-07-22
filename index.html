@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tally — group expenses, settled simply</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#e9ece6;        /* sage-tinted page */
+    --surface:#ffffff;
+    --ink:#16211c;          /* near-black, green undertone */
+    --muted:#6d7a72;        /* sage gray */
+    --line:#d5dad2;         /* hairline */
+    --credit:#1f7a5c;       /* pine — the group owes you */
+    --credit-soft:#e5f1eb;
+    --debt:#bb4028;         /* brick — you owe the group */
+    --debt-soft:#f6e6e1;
+    --amber:#c98a1a;
+    --focus:#1f7a5c;
+    --shadow:0 1px 2px rgba(22,33,28,.06), 0 6px 20px rgba(22,33,28,.06);
+    --radius:14px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:'Inter',system-ui,sans-serif;
+    line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+    font-variant-numeric:tabular-nums;
+  }
+  .mono{font-family:'JetBrains Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums}
+  .wrap{max-width:1080px;margin:0 auto;padding:24px 20px 64px}
+
+  /* ---------- header ---------- */
+  header.top{display:flex;align-items:baseline;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:8px}
+  .brand{display:flex;align-items:baseline;gap:12px}
+  .brand h1{
+    font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:34px;letter-spacing:-.02em;margin:0;
+  }
+  .brand .dot{color:var(--credit)}
+  .tag{color:var(--muted);font-size:14px}
+  .saved{font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace;opacity:0;transition:opacity .3s}
+  .saved.show{opacity:1}
+  .whoami{display:flex;align-items:center;gap:8px}
+  .whoami .f{font-size:11px;letter-spacing:.03em;text-transform:uppercase;color:var(--muted)}
+  .whoami select{width:auto;padding:6px 26px 6px 10px;font-size:13.5px;border-radius:8px;border-width:1.5px}
+  .act .t3{font-size:11.5px;color:var(--muted);margin-top:2px;display:flex;align-items:center;gap:6px}
+  .by-badge{display:inline-flex;align-items:center;gap:5px;background:var(--paper);border:1px solid var(--line);border-radius:999px;padding:1px 8px 1px 5px;font-size:11px}
+  .by-badge .d{width:6px;height:6px;border-radius:50%}
+  .status-pill{display:inline-flex;align-items:center;gap:7px;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:3px 11px;font-size:12px;font-weight:500}
+  .live-dot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex:none}
+  .live-dot.on{background:var(--credit);box-shadow:0 0 0 0 rgba(31,122,92,.5);animation:pulse 2s infinite}
+  .live-dot.off{background:var(--debt)}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(31,122,92,.5)}70%{box-shadow:0 0 0 6px rgba(31,122,92,0)}100%{box-shadow:0 0 0 0 rgba(31,122,92,0)}}
+  .overlay{position:fixed;inset:0;background:rgba(22,33,28,.42);backdrop-filter:blur(3px);display:grid;place-items:center;z-index:50;padding:20px}
+  .modal{background:var(--surface);border-radius:16px;box-shadow:0 20px 60px rgba(22,33,28,.28);padding:26px;max-width:420px;width:100%;animation:printin .3s ease both}
+  .modal h3{font-family:'Space Grotesk',sans-serif;font-size:20px;margin:0 0 8px;letter-spacing:-.01em}
+  .modal input{margin-top:2px}
+  .sharednote{font-size:12.5px;color:var(--muted);margin:2px 0 22px;display:flex;align-items:center;gap:7px}
+  .sharednote svg{flex:none}
+
+  /* ---------- layout ---------- */
+  .grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.05fr);gap:20px;align-items:start}
+  @media(max-width:860px){.grid{grid-template-columns:1fr}}
+  .stack{display:flex;flex-direction:column;gap:20px}
+
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
+  .card .hd{padding:16px 18px 0;display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .card .hd h2{font-family:'Space Grotesk',sans-serif;font-size:14px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--ink);margin:0}
+  .card .bd{padding:16px 18px 18px}
+  .hint{color:var(--muted);font-size:13px}
+
+  /* ---------- form bits ---------- */
+  label.f{display:block;font-size:12px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;color:var(--muted);margin:0 0 6px}
+  input[type=text],input[type=number],select{
+    width:100%;font-family:inherit;font-size:15px;color:var(--ink);background:var(--surface);
+    border:1.5px solid var(--line);border-radius:10px;padding:10px 12px;transition:border-color .15s,box-shadow .15s;
+  }
+  input:focus,select:focus{outline:none;border-color:var(--focus);box-shadow:0 0 0 3px rgba(31,122,92,.14)}
+  .amt-wrap{position:relative}
+  .amt-wrap .cur{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--muted);font-family:'JetBrains Mono',monospace;pointer-events:none}
+  .amt-wrap input{padding-left:28px;font-family:'JetBrains Mono',monospace}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .field{margin-bottom:14px}
+
+  .btn{font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:14px;border:none;border-radius:10px;padding:11px 16px;cursor:pointer;transition:transform .08s,background .15s,opacity .15s}
+  .btn:active{transform:translateY(1px)}
+  .btn.primary{background:var(--ink);color:#fff;width:100%}
+  .btn.primary:hover{background:#0f1712}
+  .btn.ghost{background:transparent;color:var(--muted);border:1.5px solid var(--line);padding:8px 12px;font-size:13px}
+  .btn.ghost:hover{border-color:var(--muted);color:var(--ink)}
+  .btn.mini{background:var(--credit-soft);color:var(--credit);padding:6px 11px;font-size:12.5px;border-radius:8px}
+  .btn.mini:hover{background:#d8ebe1}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+
+  /* segmented */
+  .seg{display:inline-flex;background:var(--paper);border:1px solid var(--line);border-radius:9px;padding:3px;gap:3px}
+  .seg button{font-family:inherit;font-size:13px;font-weight:500;border:none;background:transparent;color:var(--muted);padding:6px 12px;border-radius:6px;cursor:pointer}
+  .seg button.on{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+
+  /* people chips (split-among) */
+  .chips{display:flex;flex-wrap:wrap;gap:8px}
+  .chip{display:inline-flex;align-items:center;gap:7px;border:1.5px solid var(--line);background:var(--surface);border-radius:999px;padding:6px 12px;font-size:14px;cursor:pointer;user-select:none;transition:.12s}
+  .chip:hover{border-color:var(--muted)}
+  .chip.on{border-color:var(--credit);background:var(--credit-soft);color:#123f30}
+  .chip .tick{width:15px;height:15px;border-radius:50%;border:1.5px solid var(--line);display:grid;place-items:center;font-size:10px;color:#fff}
+  .chip.on .tick{background:var(--credit);border-color:var(--credit)}
+  .exact-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 0}
+  .exact-row .nm{font-size:14px}
+  .exact-row .amt-wrap{width:130px}
+  .exact-sum{font-size:12.5px;font-family:'JetBrains Mono',monospace;text-align:right;margin-top:4px}
+  .exact-sum.bad{color:var(--debt)} .exact-sum.ok{color:var(--credit)}
+
+  /* people manager */
+  .people-list{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+  .ptag{display:inline-flex;align-items:center;gap:8px;background:var(--paper);border:1px solid var(--line);border-radius:999px;padding:5px 6px 5px 13px;font-size:14px}
+  .ptag button{border:none;background:none;color:var(--muted);cursor:pointer;font-size:16px;line-height:1;padding:2px 5px;border-radius:50%}
+  .ptag button:hover{background:var(--debt-soft);color:var(--debt)}
+  .add-person{display:flex;gap:8px}
+  .add-person input{flex:1}
+
+  /* balances */
+  .bal-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 0;border-bottom:1px dashed var(--line)}
+  .bal-row:last-child{border-bottom:none}
+  .bal-name{display:flex;align-items:center;gap:11px;font-weight:500}
+  .avatar{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:13px;color:#fff;flex:none}
+  .bal-amt{font-family:'JetBrains Mono',monospace;font-weight:500;font-size:15px}
+  .bal-amt.pos{color:var(--credit)} .bal-amt.neg{color:var(--debt)} .bal-amt.zero{color:var(--muted)}
+  .bal-tail{font-size:11px;color:var(--muted);letter-spacing:.03em;text-transform:uppercase;text-align:right;line-height:1.2}
+  .checksum{margin-top:12px;font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace;display:flex;align-items:center;gap:6px}
+  .checksum.bad{color:var(--debt)}
+
+  /* ---------- receipt (the signature) ---------- */
+  .receipt{
+    position:relative;background:#fffdf8;color:var(--ink);
+    border-radius:4px;padding:22px 22px 10px;
+    box-shadow:0 1px 2px rgba(22,33,28,.05), 0 10px 30px rgba(22,33,28,.09);
+    font-family:'JetBrains Mono',monospace;
+  }
+  /* perforated top & bottom edges */
+  .receipt::before,.receipt::after{
+    content:"";position:absolute;left:0;right:0;height:9px;
+    background:radial-gradient(circle at 7px 9px, transparent 0 6px, #fffdf8 7px) repeat-x;
+    background-size:14px 9px;
+  }
+  .receipt::before{top:-8px;transform:rotate(180deg)}
+  .receipt::after{bottom:-8px}
+  .r-head{text-align:center;padding-bottom:12px;border-bottom:1.5px dashed #cfc9b8}
+  .r-head .r-title{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:16px;letter-spacing:.16em;text-transform:uppercase}
+  .r-head .r-sub{font-size:11px;color:var(--muted);margin-top:3px;letter-spacing:.05em}
+  .r-line{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 0;border-bottom:1px dotted #d8d2c0}
+  .r-line .who{display:flex;align-items:center;gap:8px;font-size:13px;min-width:0}
+  .r-line .arrow{color:var(--credit);flex:none}
+  .r-line .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .r-line .pay{display:flex;align-items:center;gap:10px;flex:none}
+  .r-line .pay .v{font-weight:700;font-size:14px}
+  .r-line .rec{border:none;background:var(--ink);color:#fff;font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:11px;padding:5px 9px;border-radius:6px;cursor:pointer}
+  .r-line .rec:hover{background:#0f1712}
+  .r-foot{text-align:center;padding:14px 0 8px;font-size:11px;color:var(--muted);letter-spacing:.05em}
+  .r-total{display:flex;justify-content:space-between;font-size:12px;padding-top:12px;margin-top:2px;border-top:1.5px dashed #cfc9b8;font-weight:700}
+  .allsquare{text-align:center;padding:26px 8px}
+  .allsquare .big{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:20px;letter-spacing:.02em}
+  .allsquare .ring{width:52px;height:52px;border-radius:50%;background:var(--credit-soft);color:var(--credit);display:grid;place-items:center;margin:0 auto 12px}
+
+  @keyframes printin{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
+  .r-line,.r-total{animation:printin .32s ease both}
+
+  /* activity */
+  .act{display:flex;align-items:flex-start;gap:12px;padding:13px 0;border-bottom:1px solid var(--line)}
+  .act:last-child{border-bottom:none}
+  .act .ic{width:34px;height:34px;border-radius:9px;flex:none;display:grid;place-items:center}
+  .act .ic.exp{background:var(--debt-soft);color:var(--debt)}
+  .act .ic.pay{background:var(--credit-soft);color:var(--credit)}
+  .act .mid{flex:1;min-width:0}
+  .act .t1{font-weight:600;font-size:14.5px}
+  .act .t2{font-size:12.5px;color:var(--muted);margin-top:2px}
+  .act .rt{text-align:right;flex:none}
+  .act .rt .v{font-family:'JetBrains Mono',monospace;font-weight:600;font-size:14px}
+  .act .rt .del{border:none;background:none;color:var(--muted);cursor:pointer;font-size:12px;padding:3px 6px;border-radius:6px;margin-top:2px}
+  .act .rt .del:hover{background:var(--debt-soft);color:var(--debt)}
+
+  .empty{text-align:center;color:var(--muted);padding:26px 10px;font-size:14px}
+  .empty .em-ic{opacity:.5;margin-bottom:8px}
+
+  footer.foot{margin-top:28px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;color:var(--muted);font-size:12px}
+  .foot .mono{font-size:12px}
+  .link{background:none;border:none;color:var(--muted);text-decoration:underline;cursor:pointer;font-size:12px;font-family:inherit}
+  .link:hover{color:var(--debt)}
+
+  @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <h1>Tally<span class="dot">.</span></h1>
+      <span class="tag">group expenses, settled simply</span>
+    </div>
+    <div class="whoami">
+      <span class="f" style="margin:0">You are</span>
+      <select id="meSelect"><option value="">— pick —</option></select>
+      <span class="saved" id="saved">saved ✓</span>
+    </div>
+  </header>
+  <div class="sharednote">
+    <span class="status-pill" id="statusPill"><span class="live-dot" id="liveDot"></span><span id="statusText">Connecting…</span></span>
+    <span id="shareline">Everyone in this group shares one live ledger. Changes sync across phones instantly.</span>
+    <button class="link" id="switchGroup" style="margin-left:auto">Switch group</button>
+  </div>
+
+  <!-- join / create group overlay -->
+  <div class="overlay" id="joinOverlay" style="display:none">
+    <div class="modal">
+      <h3>Join your group</h3>
+      <p class="hint" style="margin:0 0 16px">Everyone who enters the same group code shares one ledger. Pick a code your friends will use — e.g. <span class="mono">goa-trip</span> or <span class="mono">flatmates</span>.</p>
+      <label class="f">Group code</label>
+      <input type="text" id="groupInput" placeholder="goa-trip" autocomplete="off" maxlength="40">
+      <p class="hint" id="joinErr" style="color:var(--debt);min-height:16px;margin:6px 0 0"></p>
+      <button class="btn primary" id="joinBtn" style="margin-top:14px">Enter group</button>
+      <p class="hint" style="margin:14px 0 0">Tip: bookmark or share the link once you're in — it carries the code, so friends land straight in the right ledger.</p>
+    </div>
+  </div>
+
+  <!-- config-missing notice -->
+  <div class="overlay" id="configOverlay" style="display:none">
+    <div class="modal">
+      <h3>Almost there — add your Firebase keys</h3>
+      <p class="hint">Open <span class="mono">index.html</span> and paste your project's config into the <span class="mono">firebaseConfig</span> block near the top of the script. The step-by-step is in the setup notes.</p>
+    </div>
+  </div>
+
+  <div class="grid">
+    <!-- LEFT: input -->
+    <div class="stack">
+      <section class="card">
+        <div class="hd"><h2>Who's in the group</h2></div>
+        <div class="bd">
+          <div class="people-list" id="peopleList"></div>
+          <div class="add-person">
+            <input type="text" id="personName" placeholder="Add a name…" maxlength="24" autocomplete="off">
+            <button class="btn ghost" id="addPerson">Add</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="card" id="expenseCard">
+        <div class="hd"><h2>Add an expense</h2></div>
+        <div class="bd">
+          <div class="field">
+            <label class="f">What was it for</label>
+            <input type="text" id="expDesc" placeholder="Dinner at Barbeque Nation" maxlength="50" autocomplete="off">
+          </div>
+          <div class="row">
+            <div class="field">
+              <label class="f">Amount</label>
+              <div class="amt-wrap"><span class="cur" id="cur1">₹</span><input type="number" id="expAmount" placeholder="0.00" min="0" step="0.01"></div>
+            </div>
+            <div class="field">
+              <label class="f">Paid by</label>
+              <select id="expPaidBy"></select>
+            </div>
+          </div>
+          <div class="field">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+              <label class="f" style="margin:0">Split between</label>
+              <div class="seg" id="splitMode">
+                <button data-m="equal" class="on">Equally</button>
+                <button data-m="exact">Exact amounts</button>
+              </div>
+            </div>
+            <div class="chips" id="splitChips"></div>
+            <div id="exactBox" style="display:none;margin-top:12px"></div>
+          </div>
+          <button class="btn primary" id="addExpense">Add expense</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="hd"><h2>Record a payment</h2></div>
+        <div class="bd">
+          <p class="hint" style="margin:0 0 14px">Log it when someone actually pays someone back.</p>
+          <div class="row">
+            <div class="field">
+              <label class="f">From</label>
+              <select id="payFrom"></select>
+            </div>
+            <div class="field">
+              <label class="f">To</label>
+              <select id="payTo"></select>
+            </div>
+          </div>
+          <div class="field">
+            <label class="f">Amount</label>
+            <div class="amt-wrap"><span class="cur">₹</span><input type="number" id="payAmount" placeholder="0.00" min="0" step="0.01"></div>
+          </div>
+          <button class="btn primary" id="addPayment">Record payment</button>
+        </div>
+      </section>
+    </div>
+
+    <!-- RIGHT: results -->
+    <div class="stack">
+      <section class="card">
+        <div class="hd"><h2>Balances</h2><span class="hint" id="balHint"></span></div>
+        <div class="bd">
+          <div id="balances"></div>
+          <div class="checksum" id="checksum"></div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="hd"><h2>Settle up</h2><span class="hint">fewest transfers</span></div>
+        <div class="bd">
+          <div id="receiptHost"></div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="hd"><h2>Activity</h2><span class="hint" id="actCount"></span></div>
+        <div class="bd"><div id="activity"></div></div>
+      </section>
+    </div>
+  </div>
+
+  <footer class="foot">
+    <span class="mono" id="statline">—</span>
+    <span><button class="link" id="resetBtn">Reset everything</button></span>
+  </footer>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-app.js";
+import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-auth.js";
+import { getFirestore, collection, doc, setDoc, addDoc, deleteDoc, onSnapshot, query, orderBy }
+  from "https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js";
+
+/* ============================================================
+   1. PASTE YOUR FIREBASE CONFIG HERE
+   (Firebase console → Project settings → your web app → SDK setup)
+   ============================================================ */
+
+// Import the functions you need from the SDKs you need
+import { initializeApp } from "firebase/app";
+import { getAnalytics } from "firebase/analytics";
+// TODO: Add SDKs for Firebase products that you want to use
+// https://firebase.google.com/docs/web/setup#available-libraries
+
+// Your web app's Firebase configuration
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const firebaseConfig = {
+  apiKey: "AIzaSyCe_C-ULt3_1u28KsGCKrU7PVxytFilIuU",
+  authDomain: "tally-560cc.firebaseapp.com",
+  projectId: "tally-560cc",
+  storageBucket: "tally-560cc.firebasestorage.app",
+  messagingSenderId: "141087355327",
+  appId: "1:141087355327:web:f50953780ba0841532310a",
+  measurementId: "G-ZHSWNN0FXP"
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const analytics = getAnalytics(app);
+/* ============================================================ */
+
+const CUR = "₹";
+let state = { people: [], entries: [] };
+let me = "";                 // who "I" am, saved on this device only
+let splitModeVal = "equal";
+let selectedShare = {};
+let exactVals = {};
+
+let db=null, group="", membersRef=null, entriesRef=null;
+let unsubMembers=null, unsubEntries=null;
+let memberIds = {};          // name -> firestore doc id (for deletes)
+
+const configReady = !String(firebaseConfig.apiKey).startsWith("YOUR_");
+
+/* identity is per-device, so localStorage is the right home for it */
+function loadMe(){ try{ return localStorage.getItem("tally:me")||""; }catch(e){ return ""; } }
+function saveMe(){ try{ localStorage.setItem("tally:me", me); }catch(e){} }
+function lastGroup(){ try{ return localStorage.getItem("tally:group")||""; }catch(e){ return ""; } }
+function rememberGroup(g){ try{ localStorage.setItem("tally:group", g); }catch(e){} }
+
+function flashSaved(){
+  const s=document.getElementById("saved");
+  if(!s) return; s.classList.add("show");
+  clearTimeout(flashSaved._t); flashSaved._t=setTimeout(()=>s.classList.remove("show"),1200);
+}
+function setStatus(txt, cls){
+  document.getElementById("statusText").textContent = txt;
+  const d=document.getElementById("liveDot"); d.className="live-dot "+(cls||"");
+}
+
+/* ---------------- Firestore writes ---------------- */
+async function addMember(name){
+  await addDoc(membersRef, { name, ts: Date.now() }); flashSaved();
+}
+async function removeMember(name){
+  const id=memberIds[name]; if(id) await deleteDoc(doc(membersRef, id)); flashSaved();
+}
+async function addEntry(obj){ await addDoc(entriesRef, obj); flashSaved(); }
+async function removeEntry(id){ await deleteDoc(doc(entriesRef, id)); flashSaved(); }
+async function clearAll(){
+  for(const e of state.entries) await deleteDoc(doc(entriesRef, e.id));
+  for(const p of state.people){ const id=memberIds[p]; if(id) await deleteDoc(doc(membersRef, id)); }
+}
+
+/* ---------------- money helpers (integer paise) ---------------- */
+function toPaise(v){ return Math.round(parseFloat(v||0)*100); }
+function fmt(paise){
+  const neg = paise<0; const a=Math.abs(paise);
+  const s=(a/100).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2});
+  return (neg?"-":"")+CUR+s;
+}
+function fmtPlain(paise){ return CUR+(Math.abs(paise)/100).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2}); }
+
+/* split an amount equally, distributing leftover paise fairly */
+function equalShares(paise, names){
+  const n=names.length, base=Math.floor(paise/n); let rem=paise-base*n;
+  const out={};
+  names.forEach((nm,i)=>{ out[nm]=base+(i<rem?1:0); });
+  return out;
+}
+
+/* ---------------- core computation ---------------- */
+function computeBalances(){
+  const b={}; state.people.forEach(p=>b[p]=0);
+  for(const e of state.entries){
+    if(e.type==="expense"){
+      if(b[e.paidBy]!==undefined) b[e.paidBy]+=e.paise;
+      for(const nm in e.split){ if(b[nm]!==undefined) b[nm]-=e.split[nm]; }
+    }else if(e.type==="payment"){
+      if(b[e.from]!==undefined) b[e.from]+=e.paise;
+      if(b[e.to]!==undefined)   b[e.to]  -=e.paise;
+    }
+  }
+  return b;
+}
+/* greedy minimum cash flow */
+function settleUp(bal){
+  const cred=[],deb=[];
+  for(const nm in bal){ if(bal[nm]>0) cred.push({nm,v:bal[nm]}); else if(bal[nm]<0) deb.push({nm,v:-bal[nm]}); }
+  cred.sort((a,b)=>b.v-a.v); deb.sort((a,b)=>b.v-a.v);
+  const tx=[]; let i=0,j=0;
+  while(i<deb.length && j<cred.length){
+    const pay=Math.min(deb[i].v,cred[j].v);
+    tx.push({from:deb[i].nm,to:cred[j].nm,paise:pay});
+    deb[i].v-=pay; cred[j].v-=pay;
+    if(deb[i].v===0)i++; if(cred[j].v===0)j++;
+  }
+  return tx;
+}
+
+/* ---------------- avatars ---------------- */
+const AV=["#1f7a5c","#3b6ea5","#a6543a","#7a5aa8","#b8892b","#2f8f83","#a23f6b","#556b2f"];
+function avatarColor(name){ let h=0; for(const c of name) h=(h*31+c.charCodeAt(0))>>>0; return AV[h%AV.length]; }
+function initials(name){ return name.trim().slice(0,2).toUpperCase(); }
+function av(name){ return `<span class="avatar" style="background:${avatarColor(name)}">${initials(name)}</span>`; }
+
+/* ---------------- rendering ---------------- */
+function esc(s){ return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+function renderPeople(){
+  const host=document.getElementById("peopleList");
+  if(state.people.length===0){ host.innerHTML=`<span class="hint">No one yet — add the friends who go on outings.</span>`; }
+  else host.innerHTML=state.people.map(p=>{
+    const used=isUsed(p);
+    return `<span class="ptag">${av(p)} ${esc(p)}
+      <button data-rm="${esc(p)}" title="${used?'Has activity — clear their entries first':'Remove'}" ${used?'style="opacity:.35"':''}>×</button></span>`;
+  }).join("");
+  // selects
+  const opts=state.people.map(p=>`<option>${esc(p)}</option>`).join("");
+  ["expPaidBy","payFrom","payTo"].forEach(id=>{
+    const el=document.getElementById(id); const cur=el.value;
+    el.innerHTML=opts; if(state.people.includes(cur)) el.value=cur;
+  });
+  if(state.people.length>=2 && document.getElementById("payTo").value===document.getElementById("payFrom").value){
+    document.getElementById("payTo").selectedIndex=1;
+  }
+  renderSplitChips();
+}
+function isUsed(p){
+  return state.entries.some(e=> e.type==="expense" ? (e.paidBy===p||p in e.split) : (e.from===p||e.to===p));
+}
+
+function renderSplitChips(){
+  const host=document.getElementById("splitChips");
+  if(state.people.length===0){ host.innerHTML=`<span class="hint">Add people first.</span>`; return; }
+  // default: everyone selected
+  state.people.forEach(p=>{ if(!(p in selectedShare)) selectedShare[p]=true; });
+  Object.keys(selectedShare).forEach(p=>{ if(!state.people.includes(p)) delete selectedShare[p]; });
+  host.innerHTML=state.people.map(p=>`
+    <span class="chip ${selectedShare[p]?'on':''}" data-share="${esc(p)}">
+      <span class="tick">${selectedShare[p]?'✓':''}</span>${esc(p)}
+    </span>`).join("");
+  renderExact();
+}
+function renderExact(){
+  const box=document.getElementById("exactBox");
+  if(splitModeVal!=="exact"){ box.style.display="none"; return; }
+  box.style.display="block";
+  const chosen=state.people.filter(p=>selectedShare[p]);
+  if(chosen.length===0){ box.innerHTML=`<span class="hint">Pick who shared this.</span>`; return; }
+  box.innerHTML=chosen.map(p=>`
+    <div class="exact-row">
+      <span class="nm">${av(p)} ${esc(p)}</span>
+      <div class="amt-wrap"><span class="cur">₹</span>
+        <input type="number" class="exact-in" data-ex="${esc(p)}" min="0" step="0.01" placeholder="0.00" value="${exactVals[p]||''}">
+      </div>
+    </div>`).join("") + `<div class="exact-sum" id="exactSum"></div>`;
+  updateExactSum();
+}
+function updateExactSum(){
+  const el=document.getElementById("exactSum"); if(!el) return;
+  const total=toPaise(document.getElementById("expAmount").value);
+  let sum=0; document.querySelectorAll(".exact-in").forEach(i=>sum+=toPaise(i.value));
+  const diff=total-sum;
+  if(total===0){ el.textContent=`entered ${fmtPlain(sum)}`; el.className="exact-sum"; return; }
+  if(diff===0){ el.textContent=`✓ matches the total`; el.className="exact-sum ok"; }
+  else el.textContent=`${fmtPlain(sum)} of ${fmtPlain(total)} — ${diff>0?fmtPlain(diff)+" left":fmtPlain(-diff)+" over"}`,
+       el.className="exact-sum bad";
+}
+
+function renderBalances(){
+  const bal=computeBalances();
+  const host=document.getElementById("balances");
+  document.getElementById("balHint").textContent = state.people.length? `${state.people.length} people`:"";
+  if(state.people.length===0){ host.innerHTML=`<div class="empty">Add people and expenses to see who's up and who's down.</div>`;
+    document.getElementById("checksum").innerHTML=""; return; }
+  const order=[...state.people].sort((a,b)=>bal[b]-bal[a]);
+  host.innerHTML=order.map(p=>{
+    const v=bal[p], cls=v>0?"pos":v<0?"neg":"zero";
+    const tail=v>0?"gets back":v<0?"owes":"settled";
+    return `<div class="bal-row">
+      <span class="bal-name">${av(p)} ${esc(p)}</span>
+      <span style="display:flex;align-items:center;gap:12px">
+        <span class="bal-amt ${cls}">${fmt(v)}</span>
+        <span class="bal-tail">${tail}</span>
+      </span></div>`;
+  }).join("");
+  const total=Object.values(bal).reduce((a,b)=>a+b,0);
+  const cs=document.getElementById("checksum");
+  if(total===0) cs.className="checksum", cs.innerHTML=`✓ balances reconcile to zero`;
+  else cs.className="checksum bad", cs.innerHTML=`⚠ off by ${fmt(total)} — check your entries`;
+}
+
+function renderReceipt(){
+  const bal=computeBalances();
+  const tx=settleUp(bal);
+  const host=document.getElementById("receiptHost");
+  const anyBal=state.people.length>0 && state.entries.length>0;
+  if(!anyBal){
+    host.innerHTML=`<div class="empty"><div class="em-ic">🧾</div>Your settle-up receipt prints here once there are expenses.</div>`; return;
+  }
+  if(tx.length===0){
+    host.innerHTML=`<div class="receipt"><div class="allsquare">
+      <div class="ring"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg></div>
+      <div class="big">All square</div>
+      <div class="hint" style="margin-top:4px">Nobody owes anybody. Nice.</div>
+    </div></div>`; return;
+  }
+  const today=new Date().toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"});
+  const lines=tx.map((t,idx)=>`
+    <div class="r-line" style="animation-delay:${idx*60}ms">
+      <span class="who">
+        <span class="nm">${esc(t.from)}</span>
+        <span class="arrow">→</span>
+        <span class="nm">${esc(t.to)}</span>
+      </span>
+      <span class="pay">
+        <span class="v">${fmtPlain(t.paise)}</span>
+        <button class="rec" data-rec='${esc(JSON.stringify(t))}'>Record</button>
+      </span>
+    </div>`).join("");
+  const total=tx.reduce((a,t)=>a+t.paise,0);
+  host.innerHTML=`<div class="receipt">
+    <div class="r-head">
+      <div class="r-title">Settle Up</div>
+      <div class="r-sub">${today} · ${tx.length} transfer${tx.length>1?'s':''}</div>
+    </div>
+    ${lines}
+    <div class="r-total"><span>TOTAL MOVING</span><span>${fmtPlain(total)}</span></div>
+    <div class="r-foot">tap “Record” once a transfer is actually paid</div>
+  </div>`;
+}
+
+function renderActivity(){
+  const host=document.getElementById("activity");
+  const list=[...state.entries].reverse();
+  document.getElementById("actCount").textContent = state.entries.length? `${state.entries.length} entr${state.entries.length>1?'ies':'y'}`:"";
+  if(list.length===0){ host.innerHTML=`<div class="empty"><div class="em-ic">📋</div>No expenses or payments yet.</div>`; return; }
+  host.innerHTML=list.map(e=>{
+    const when = e.ts ? new Date(e.ts).toLocaleDateString("en-IN",{day:"2-digit",month:"short"}) : "";
+    const byBadge = e.by
+      ? `<span class="by-badge"><span class="d" style="background:${avatarColor(e.by)}"></span>added by ${esc(e.by)}</span>`
+      : `<span class="by-badge"><span class="d" style="background:var(--muted)"></span>added by —</span>`;
+    const meta = `<div class="t3">${byBadge}${when?`<span>· ${when}</span>`:''}</div>`;
+    if(e.type==="expense"){
+      const who=Object.keys(e.split);
+      const shareTxt = who.length===state.people.length? "split with everyone" : "split with "+who.join(", ");
+      return `<div class="act">
+        <span class="ic exp"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></span>
+        <div class="mid">
+          <div class="t1">${esc(e.desc||"Expense")}</div>
+          <div class="t2">${esc(e.paidBy)} paid · ${esc(shareTxt)}</div>
+          ${meta}
+        </div>
+        <div class="rt"><div class="v">${fmtPlain(e.paise)}</div>
+          <button class="del" data-del="${e.id}">delete</button></div>
+      </div>`;
+    }else{
+      return `<div class="act">
+        <span class="ic pay"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></span>
+        <div class="mid">
+          <div class="t1">${esc(e.from)} paid ${esc(e.to)}</div>
+          <div class="t2">payment recorded</div>
+          ${meta}
+        </div>
+        <div class="rt"><div class="v">${fmtPlain(e.paise)}</div>
+          <button class="del" data-del="${e.id}">delete</button></div>
+      </div>`;
+    }
+  }).join("");
+}
+
+function renderMe(){
+  const el=document.getElementById("meSelect");
+  el.innerHTML=`<option value="">— pick —</option>`+state.people.map(p=>`<option ${p===me?'selected':''}>${esc(p)}</option>`).join("");
+  el.value = state.people.includes(me)? me : "";
+}
+
+function renderStat(){
+  const exp=state.entries.filter(e=>e.type==="expense");
+  const spent=exp.reduce((a,e)=>a+e.paise,0);
+  document.getElementById("statline").textContent =
+    `${state.people.length} people · ${exp.length} expenses · ${fmtPlain(spent)} tracked`;
+}
+
+function renderAll(){
+  renderPeople(); renderMe(); renderBalances(); renderReceipt(); renderActivity(); renderStat();
+  document.getElementById("addExpense").disabled = state.people.length<1;
+  document.getElementById("addPayment").disabled = state.people.length<2;
+}
+
+/* ---------------- actions (write to Firestore; the live listener re-renders) ---------------- */
+async function addPerson(){
+  const el=document.getElementById("personName");
+  const nm=el.value.trim();
+  if(!nm || !membersRef) return;
+  if(state.people.some(p=>p.toLowerCase()===nm.toLowerCase())){ el.select(); return; }
+  el.value=""; el.focus();
+  try{ await addMember(nm); }catch(e){ syncError(e); }
+}
+async function removePerson(nm){
+  if(isUsed(nm) || !membersRef) return;
+  delete selectedShare[nm]; delete exactVals[nm];
+  try{ await removeMember(nm); }catch(e){ syncError(e); }
+}
+
+async function addExpense(){
+  const desc=document.getElementById("expDesc").value.trim();
+  const total=toPaise(document.getElementById("expAmount").value);
+  const paidBy=document.getElementById("expPaidBy").value;
+  const chosen=state.people.filter(p=>selectedShare[p]);
+  if(total<=0){ flash("expAmount"); return; }
+  if(chosen.length===0){ document.getElementById("splitChips").animate([{opacity:.4},{opacity:1}],200); return; }
+  let split;
+  if(splitModeVal==="equal"){
+    split=equalShares(total,chosen);
+  }else{
+    split={}; let sum=0;
+    chosen.forEach(p=>{ const v=toPaise(exactVals[p]); split[p]=v; sum+=v; });
+    if(sum!==total){ updateExactSum(); const el=document.getElementById("exactSum"); if(el) el.animate([{transform:"translateX(-3px)"},{transform:"translateX(3px)"},{transform:"none"}],220); return; }
+  }
+  document.getElementById("expDesc").value="";
+  document.getElementById("expAmount").value="";
+  exactVals={};
+  try{ await addEntry({type:"expense",desc:desc||"Expense",paidBy,paise:total,split,by:me||null,ts:Date.now()}); }
+  catch(e){ syncError(e); }
+}
+
+async function addPayment(){
+  const from=document.getElementById("payFrom").value;
+  const to=document.getElementById("payTo").value;
+  const paise=toPaise(document.getElementById("payAmount").value);
+  if(from===to){ flash("payTo"); return; }
+  if(paise<=0){ flash("payAmount"); return; }
+  document.getElementById("payAmount").value="";
+  try{ await addEntry({type:"payment",from,to,paise,by:me||null,ts:Date.now()}); }
+  catch(e){ syncError(e); }
+}
+async function recordSettlement(t){
+  try{ await addEntry({type:"payment",from:t.from,to:t.to,paise:t.paise,by:me||null,ts:Date.now()}); }
+  catch(e){ syncError(e); }
+}
+async function deleteEntry(id){
+  try{ await removeEntry(id); }catch(e){ syncError(e); }
+}
+function flash(id){ document.getElementById(id).animate([{borderColor:"var(--debt)"},{borderColor:"var(--line)"}],600); document.getElementById(id).focus(); }
+function syncError(e){ console.error(e); setStatus("Sync error — check rules", "off"); }
+
+/* ---------------- events ---------------- */
+document.getElementById("addPerson").onclick=addPerson;
+document.getElementById("personName").addEventListener("keydown",e=>{ if(e.key==="Enter") addPerson(); });
+document.getElementById("addExpense").onclick=addExpense;
+document.getElementById("addPayment").onclick=addPayment;
+
+document.getElementById("peopleList").addEventListener("click",e=>{
+  const b=e.target.closest("[data-rm]"); if(b) removePerson(b.dataset.rm);
+});
+document.getElementById("splitChips").addEventListener("click",e=>{
+  const c=e.target.closest("[data-share]"); if(!c) return;
+  const p=c.dataset.share; selectedShare[p]=!selectedShare[p]; renderSplitChips();
+});
+document.getElementById("splitMode").addEventListener("click",e=>{
+  const b=e.target.closest("button[data-m]"); if(!b) return;
+  splitModeVal=b.dataset.m;
+  [...e.currentTarget.children].forEach(x=>x.classList.toggle("on",x===b));
+  renderExact();
+});
+document.getElementById("exactBox").addEventListener("input",e=>{
+  const i=e.target.closest(".exact-in"); if(!i) return;
+  exactVals[i.dataset.ex]=i.value; updateExactSum();
+});
+document.getElementById("expAmount").addEventListener("input",()=>{ if(splitModeVal==="exact") updateExactSum(); });
+document.getElementById("receiptHost").addEventListener("click",e=>{
+  const b=e.target.closest("[data-rec]"); if(!b) return;
+  recordSettlement(JSON.parse(b.dataset.rec));
+});
+document.getElementById("activity").addEventListener("click",e=>{
+  const b=e.target.closest("[data-del]"); if(b) deleteEntry(b.dataset.del);
+});
+document.getElementById("meSelect").addEventListener("change",e=>{ me=e.target.value; saveMe(); renderActivity(); });
+document.getElementById("resetBtn").onclick=async ()=>{
+  if(!entriesRef) return;
+  if(confirm("Clear all people, expenses and payments in this group? This can't be undone.")){
+    try{ await clearAll(); }catch(e){ syncError(e); }
+  }
+};
+document.getElementById("switchGroup").onclick=()=>{ location.hash=""; openJoin(); };
+
+/* ---------------- group join flow ---------------- */
+function normGroup(s){ return s.trim().toLowerCase().replace(/[^a-z0-9_-]+/g,"-").replace(/^-+|-+$/g,"").slice(0,40); }
+function openJoin(){
+  const ov=document.getElementById("joinOverlay");
+  ov.style.display="grid";
+  const inp=document.getElementById("groupInput");
+  inp.value=""; document.getElementById("joinErr").textContent="";
+  setTimeout(()=>inp.focus(),50);
+}
+function submitJoin(){
+  const g=normGroup(document.getElementById("groupInput").value);
+  if(!g){ document.getElementById("joinErr").textContent="Enter a code using letters, numbers or dashes."; return; }
+  document.getElementById("joinOverlay").style.display="none";
+  location.hash=g;                 // shareable: the link now carries the group
+  connectGroup(g);
+}
+document.getElementById("joinBtn").onclick=submitJoin;
+document.getElementById("groupInput").addEventListener("keydown",e=>{ if(e.key==="Enter") submitJoin(); });
+
+/* ---------------- live connection ---------------- */
+function connectGroup(g){
+  if(unsubMembers) unsubMembers();
+  if(unsubEntries) unsubEntries();
+  group=g; rememberGroup(g);
+  membersRef = collection(db, "groups", g, "members");
+  entriesRef = collection(db, "groups", g, "entries");
+  setStatus(`${g} · live`, "on");
+  document.getElementById("shareline").innerHTML =
+    `Group <b>${esc(g)}</b> — share this page's link and friends join the same ledger.`;
+
+  unsubMembers = onSnapshot(query(membersRef, orderBy("ts")), snap=>{
+    const names=[]; memberIds={};
+    snap.forEach(d=>{ const v=d.data(); names.push(v.name); memberIds[v.name]=d.id; });
+    state.people=names; renderAll();
+  }, err=>syncError(err));
+
+  unsubEntries = onSnapshot(query(entriesRef, orderBy("ts")), snap=>{
+    const arr=[]; snap.forEach(d=>arr.push({ id:d.id, ...d.data() }));
+    state.entries=arr; renderAll();
+  }, err=>syncError(err));
+}
+
+/* ---------------- boot ---------------- */
+async function boot(){
+  me = loadMe();
+  renderAll();                       // paint empty shell immediately
+  if(!configReady){
+    document.getElementById("configOverlay").style.display="grid";
+    setStatus("Not configured", "off");
+    return;
+  }
+  try{
+    const app = initializeApp(firebaseConfig);
+    db = getFirestore(app);
+    const auth = getAuth(app);
+    await signInAnonymously(auth);
+    await new Promise(res=>{ const u=onAuthStateChanged(auth, x=>{ if(x){ u(); res(); } }); });
+  }catch(e){
+    console.error(e); setStatus("Can't reach Firebase", "off");
+    document.getElementById("shareline").textContent =
+      "Couldn't connect to Firebase — double-check your config and that Anonymous sign-in is enabled.";
+    return;
+  }
+  const g = normGroup(location.hash.slice(1)) || lastGroup();
+  if(g) connectGroup(g); else openJoin();
+  window.addEventListener("hashchange", ()=>{
+    const ng=normGroup(location.hash.slice(1));
+    if(ng && ng!==group) connectGroup(ng);
+  });
+}
+boot();
+</script>
+</body>
+</html>
